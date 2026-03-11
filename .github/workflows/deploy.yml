@@ -34,7 +34,9 @@ jobs:
 
       - name: Validate k8s manifests
         run: |
+          kubectl apply -f k8s/namespace.yml
           for file in k8s/*.yml; do
+            [ "$file" = "k8s/namespace.yml" ] && continue
             kubectl apply --dry-run=server -f "$file" || exit 1
           done
 
