@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wordpress
+  namespace: wordpress-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: wordpress
+  template:
+    metadata:
+      labels:
+        app: wordpress
+    spec:
+      containers:
+      - name: wordpress
+        image: wordpress:latest
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        envFrom:
+          - configMapRef:
+              name: wp-config
+          - secretRef:
+              name: wp-secret
+        volumeMounts:
+        - name: wp-pvc
+          mountPath: /var/www/html/wp-content/uploads
+      volumes:
+      - name: wp-pvc
+        persistentVolumeClaim:
+          claimName: wp-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wp-pvc
+  namespace: wordpress-app
+spec:
+  storageClassName: "local-path" 
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Mi

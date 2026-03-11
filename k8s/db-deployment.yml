@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db
+  namespace: wordpress-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mariadb
+  template:
+    metadata:
+      labels:
+        app: mariadb
+    spec:
+      containers:
+      - name: mariadb
+        image: mariadb:10.6.4-focal
+        ports:
+        - containerPort: 3306
+        - containerPort: 33060
+        envFrom:
+          - configMapRef:
+              name: db-cm
+          - secretRef:
+              name: db-pass
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        volumeMounts:
+        - name: db-pvc
+          mountPath: /var/lib/mysql
+      volumes:
+        - name: db-pvc
+          persistentVolumeClaim:
+            claimName: db-pvc

@@ -1,0 +1,18 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wordpress-ingress
+  namespace: wordpress-app
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: k8s.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: cluster-ip-service-wp
+            port:
+              number: 8080

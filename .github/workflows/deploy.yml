@@ -1,0 +1,113 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+env:
+  NAMESPACE: wordpress-app
+
+jobs:
+  lint-and-validate:
+    name: Lint and Validate Kubernetes Manifests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install k3s
+        run: |
+          curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik" sh -
+          sleep 15
+
+      - name: Configure kubectl for k3s
+        run: |
+          mkdir -p $HOME/.kube
+          sudo cp /etc/rancher/k3s/k3s.yaml $HOME/.kube/config
+          sudo chown $USER:$USER $HOME/.kube/config
+          sed -i 's/127.0.0.1/localhost/g' $HOME/.kube/config
+
+      - name: Validate k8s manifests
+        run: |
+          for file in k8s/*.yml; do
+            kubectl apply --dry-run=server -f "$file" || exit 1
+          done
+
+      - name: Validate k8s/backup manifests
+        run: |
+          for file in k8s/backup/*.yml; do
+            kubectl apply --dry-run=server -f "$file" || exit 1
+          done
+
+
+  deploy:
+    name: Deploy to Kubernetes Cluster
+    runs-on: ubuntu-latest
+    needs: lint-and-validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.HOST_IP }} >> ~/.ssh/known_hosts
+
+      - name: Bootstrap k3s on server
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} '
+            if ! command -v k3s &> /dev/null; then
+              curl -sfL https://get.k3s.io | sh -
+              sleep 20
+            fi
+          '
+
+      - name: Copy manifests to server
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} 'mkdir -p ~/k8s/backup'
+          scp -i ~/.ssh/id_rsa k8s/*.yml ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }}:~/k8s/
+          scp -i ~/.ssh/id_rsa k8s/backup/*.yml ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }}:~/k8s/backup/
+
+      - name: Substitute ingress host
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} \
+            "sed -i 's/k8s.local/${{ secrets.INGRESS_HOST }}/g' ~/k8s/ingress.yml"
+
+      - name: Apply manifests
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} '
+            sudo kubectl apply -f ~/k8s/namespace.yml
+            sudo kubectl apply -f ~/k8s/secrets.yml
+            sudo kubectl apply -f ~/k8s/configmap.yml
+            sudo kubectl apply -f ~/k8s/db-pvc.yml
+            sudo kubectl apply -f ~/k8s/db-deployment.yml
+            sudo kubectl apply -f ~/k8s/db-service.yml
+            sudo kubectl apply -f ~/k8s/wp-deployment.yml
+            sudo kubectl apply -f ~/k8s/wp-service.yml
+            sudo kubectl apply -f ~/k8s/ingress.yml
+            sudo kubectl apply -f ~/k8s/backup/backup-cronjob.yml
+          '
+
+      - name: Wait for db rollout
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} \
+            "sudo kubectl rollout status deployment/db -n ${{ env.NAMESPACE }} --timeout=120s"
+
+      - name: Wait for wp rollout
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} \
+            "sudo kubectl rollout status deployment/wp -n ${{ env.NAMESPACE }} --timeout=120s"
+
+      - name: Verify deployment
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} \
+            "sudo kubectl get pods,svc,ingress -n ${{ env.NAMESPACE }} -o wide"

@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-cm
+  namespace: wordpress-app
+data:
+  MYSQL_USER: wp_user
+  MYSQL_DATABASE: wordpress
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wp-config
+  namespace: wordpress-app
+data:
+  WORDPRESS_DB_HOST: cluster-ip-service-db
+  WORDPRESS_DB_USER: wp_user
+  WORDPRESS_DB_NAME: wordpress
