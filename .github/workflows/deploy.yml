@@ -124,6 +124,18 @@ jobs:
             sudo kubectl apply -f ~/k8s/backup/backup-cronjob.yml
           '
 
+      - name: Create gdrive secret
+        run: |
+          ssh -i ~/.ssh/id_rsa \
+              -o StrictHostKeyChecking=no \
+              -o ServerAliveInterval=30 \
+              ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} \
+              "sudo kubectl create secret generic gdrive-secret \
+                --namespace wordpress-app \
+                --from-literal=gdrive_folder_id='${{ secrets.GDRIVE_FOLDER_ID }}' \
+                --from-literal=gdrive_sa_json='${{ secrets.GDRIVE_SA_JSON }}' \
+                --dry-run=client -o yaml | sudo kubectl apply -f -"
+
       - name: Wait for db rollout
         run: |
           ssh -i ~/.ssh/id_rsa \
@@ -147,11 +159,3 @@ jobs:
               -o ServerAliveInterval=30 \
               ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} \
               "sudo kubectl get pods,svc,ingress -n ${{ env.NAMESPACE }} -o wide"
-
-      - name: Create gdrive secret
-        run: |
-          kubectl create secret generic gdrive-secret \
-            --namespace wordpress-app \
-            --from-literal=gdrive_folder_id="${{ secrets.GDRIVE_FOLDER_ID }}" \
-            --from-literal=gdrive_sa_json='${{ secrets.GDRIVE_SA_JSON }}' \
-            --dry-run=client -o yaml | kubectl apply -f -
