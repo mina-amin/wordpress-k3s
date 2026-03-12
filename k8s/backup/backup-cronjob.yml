@@ -4,7 +4,7 @@ metadata:
   name: db-backup
   namespace: wordpress-app
 spec:
-  schedule: "*/1 0 * * *"   # every 5 minutes
+  schedule: "*/5 * * * *"
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
   jobTemplate:
@@ -24,36 +24,43 @@ spec:
                   BACKUP_FILE="backup-$(date +%Y%m%d-%H%M%S).sql.gz"
                   mysqldump -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" | gzip > "/tmp/$BACKUP_FILE"
                   rclone copy "/tmp/$BACKUP_FILE" gdrive:
+                  rm -f "/tmp/$BACKUP_FILE"
               env:
                 - name: DB_HOST
                   valueFrom:
                     configMapKeyRef:
-                      name: wp-config        
+                      name: wp-config
                       key: WORDPRESS_DB_HOST
+
                 - name: DB_NAME
                   valueFrom:
                     configMapKeyRef:
-                      name: db-cm          
-                      key: db_name
+                      name: db-cm
+                      key: MYSQL_DATABASE
+
                 - name: DB_USER
                   valueFrom:
-                    secretKeyRef:
-                      name: db-pass        
-                      key: db_user
+                    configMapKeyRef:
+                      name: db-cm
+                      key: MYSQL_USER
+
                 - name: DB_PASSWORD
                   valueFrom:
                     secretKeyRef:
-                      name: db-pass        
-                      key: db_password
+                      name: db-pass
+                      key: MYSQL_PASSWORD
+
                 - name: RCLONE_CONFIG_GDRIVE_TYPE
                   value: "drive"
+
                 - name: RCLONE_CONFIG_GDRIVE_ROOT_FOLDER_ID
                   valueFrom:
                     secretKeyRef:
-                      name: db-pass        # ← whichever secret you add gdrive keys to
+                      name: gdrive-secret
                       key: gdrive_folder_id
+
                 - name: RCLONE_CONFIG_GDRIVE_SERVICE_ACCOUNT_CREDENTIALS
                   valueFrom:
                     secretKeyRef:
-                      name: db-pass
+                      name: gdrive-secret
                       key: gdrive_sa_json
