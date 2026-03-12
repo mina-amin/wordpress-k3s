@@ -107,7 +107,7 @@ jobs:
       - name: Wait for wp rollout
         run: |
           ssh -i ~/.ssh/id_rsa ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} \
-            "sudo kubectl rollout status deployment/wp -n ${{ env.NAMESPACE }} --timeout=120s"
+            "sudo kubectl rollout status deployment/wordpress -n ${{ env.NAMESPACE }} --timeout=120s"
 
       - name: Verify deployment
         run: |

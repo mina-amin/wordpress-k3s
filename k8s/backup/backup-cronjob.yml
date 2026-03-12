@@ -4,7 +4,7 @@ metadata:
   name: db-backup
   namespace: wordpress-app
 spec:
-  schedule: "0 2 * * *"
+  schedule: "5 * * * *"
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
   jobTemplate:
