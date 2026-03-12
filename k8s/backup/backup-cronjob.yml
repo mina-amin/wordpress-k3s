@@ -14,13 +14,14 @@ spec:
           restartPolicy: OnFailure
           containers:
             - name: db-backup
-              image: mariadb:10.6.4-focal
+              image: ubuntu:22.04
               command:
                 - /bin/bash
                 - -c
                 - |
                   set -e
-                  apt-get install -y -qq curl && curl -fsSL https://rclone.org/install.sh | bash
+                  apt-get update -qq
+                  apt-get install -y -qq mariadb-client rclone
                   BACKUP_FILE="backup-$(date +%Y%m%d-%H%M%S).sql.gz"
                   mysqldump -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" | gzip > "/tmp/$BACKUP_FILE"
                   rclone copy "/tmp/$BACKUP_FILE" gdrive:
