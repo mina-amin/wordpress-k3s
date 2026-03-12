@@ -28,33 +28,32 @@ spec:
                 - name: DB_HOST
                   valueFrom:
                     configMapKeyRef:
-                      name: wordpress-config
+                      name: db-cm          
                       key: db_host
                 - name: DB_NAME
                   valueFrom:
                     configMapKeyRef:
-                      name: wordpress-config
+                      name: db-cm          
                       key: db_name
                 - name: DB_USER
                   valueFrom:
                     secretKeyRef:
-                      name: wordpress-secret
+                      name: db-pass        
                       key: db_user
                 - name: DB_PASSWORD
                   valueFrom:
                     secretKeyRef:
-                      name: wordpress-secret
+                      name: db-pass        
                       key: db_password
-                # rclone reads these env vars automatically — no config file needed
                 - name: RCLONE_CONFIG_GDRIVE_TYPE
                   value: "drive"
                 - name: RCLONE_CONFIG_GDRIVE_ROOT_FOLDER_ID
                   valueFrom:
                     secretKeyRef:
-                      name: wordpress-secret
+                      name: db-pass        # ← whichever secret you add gdrive keys to
                       key: gdrive_folder_id
                 - name: RCLONE_CONFIG_GDRIVE_SERVICE_ACCOUNT_CREDENTIALS
                   valueFrom:
                     secretKeyRef:
-                      name: wordpress-secret
+                      name: db-pass
                       key: gdrive_sa_json
