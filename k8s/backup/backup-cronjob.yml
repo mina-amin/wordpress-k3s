@@ -4,7 +4,7 @@ metadata:
   name: db-backup
   namespace: wordpress-app
 spec:
-  schedule: "*/5 * * * *"
+  schedule: "*/2 * * * *"
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
   jobTemplate:
@@ -20,12 +20,27 @@ spec:
                 - -c
                 - |
                   set -e
+
+                  # install dependencies
                   apt-get update -qq
                   apt-get install -y -qq mariadb-client rclone
-                  BACKUP_FILE="backup-$(date +%Y%m%d-%H%M%S).sql.gz"
-                  mysqldump -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" | gzip > "/tmp/$BACKUP_FILE"
-                  rclone copy "/tmp/$BACKUP_FILE" gdrive:
-                  rm -f "/tmp/$BACKUP_FILE"
+
+                  # dump database to host folder
+                  BACKUP_FILE="/backup/backup-$(date +%Y%m%d-%H%M%S).sql.gz"
+                  echo "Dumping '$DB_NAME'..."
+                  mysqldump -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" | gzip > "$BACKUP_FILE"
+                  echo "Saved: $BACKUP_FILE"
+
+                  # upload to google drive
+                  echo "Uploading to Google Drive..."
+                  rclone copy "$BACKUP_FILE" gdrive:
+                  echo "Upload done."
+
+                  # delete backup files older than 20 minutes from host folder
+                  echo "Cleaning up files older than 20 minutes..."
+                  find /backup -name "backup-*.sql.gz" -mmin +20 -delete
+                  echo "Cleanup done."
+
               env:
                 - name: DB_HOST
                   valueFrom:
@@ -65,3 +80,13 @@ spec:
                     secretKeyRef:
                       name: gdrive-secret
                       key: gdrive_sa_json
+
+              volumeMounts:
+                - name: backup-dir
+                  mountPath: /backup
+
+          volumes:
+            - name: backup-dir
+              hostPath:
+                path: /tmp/db-backups
+                type: DirectoryOrCreate
