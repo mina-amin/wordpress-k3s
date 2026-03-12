@@ -4,7 +4,7 @@ metadata:
   name: db-backup
   namespace: wordpress-app
 spec:
-  schedule: "*/5 0 * * *"   # every 5 minutes
+  schedule: "*/1 0 * * *"   # every 5 minutes
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
   jobTemplate:
@@ -19,6 +19,7 @@ spec:
                 - /bin/bash
                 - -c
                 - |
+                  set -e
                   apt-get install -y -qq curl && curl -fsSL https://rclone.org/install.sh | bash
                   BACKUP_FILE="backup-$(date +%Y%m%d-%H%M%S).sql.gz"
                   mysqldump -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" | gzip > "/tmp/$BACKUP_FILE"
