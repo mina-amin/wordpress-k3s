@@ -32,7 +32,7 @@ spec:
               name: wp-secret
         volumeMounts:
         - name: wp-pvc
-          mountPath: /var/www/html/wp-content/uploads
+          mountPath: /var/www/html/
       volumes:
       - name: wp-pvc
         persistentVolumeClaim:
