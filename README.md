@@ -6,14 +6,14 @@
 
 On your server:
 1. Generate an SSH key pair
-bashssh-keygen -t ed25519 -C "github-actions" -f ~/.ssh/github_actions
+ssh-keygen -t ed25519 -C "github-actions" -f ~/.ssh/github_actions
 This creates two files:
 
 ~/.ssh/github_actions → private key (goes to GitHub)
 ~/.ssh/github_actions.pub → public key (goes to server)
 
 2. Create the .ssh directory and add your public key
-bashmkdir -p ~/.ssh
+mkdir -p ~/.ssh
 chmod 700 ~/.ssh
 echo "<paste contents of github_actions.pub here>" >> ~/.ssh/authorized_keys
 chmod 600 ~/.ssh/authorized_keys
@@ -32,7 +32,7 @@ ufw enable
 
 Back on your local machine:
 5. Test the SSH connection works
-bashssh -i ~/.ssh/github_actions root@<YOUR_SERVER_IP> "echo connected"
+ssh -i ~/.ssh/github_actions root@<YOUR_SERVER_IP> "echo connected"
 
 On GitHub — add the secrets:
 6. Go to your repo → Settings → Secrets and variables → Actions → New repository secret

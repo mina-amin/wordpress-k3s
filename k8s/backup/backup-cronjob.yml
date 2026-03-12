@@ -4,7 +4,7 @@ metadata:
   name: db-backup
   namespace: wordpress-app
 spec:
-  schedule: "5 * * * *"
+  schedule: "5 0 * * *"   # every 5 minutes
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
   jobTemplate:
@@ -19,39 +19,10 @@ spec:
                 - /bin/bash
                 - -c
                 - |
-                  set -e
-
-                  # Install rclone
-                  apt-get update -qq && apt-get install -y -qq curl unzip
-                  curl -fsSL https://rclone.org/install.sh | bash
-
-                  # Write service account JSON from secret
-                  echo "$GDRIVE_SA_JSON" > /tmp/sa.json
-
-                  # Configure rclone with service account
-                  mkdir -p /root/.config/rclone
-                  cat <<RCLONE_CONF > /root/.config/rclone/rclone.conf
-                  [gdrive]
-                  type = drive
-                  service_account_file = /tmp/sa.json
-                  root_folder_id = ${GDRIVE_FOLDER_ID}
-                  RCLONE_CONF
-
-                  # Dump the database
+                  apt-get install -y -qq curl && curl -fsSL https://rclone.org/install.sh | bash
                   BACKUP_FILE="backup-$(date +%Y%m%d-%H%M%S).sql.gz"
-                  mysqldump \
-                    -h "$DB_HOST" \
-                    -u "$DB_USER" \
-                    -p"$DB_PASSWORD" \
-                    "$DB_NAME" | gzip > "/tmp/$BACKUP_FILE"
-
-                  # Upload to Google Drive
+                  mysqldump -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" | gzip > "/tmp/$BACKUP_FILE"
                   rclone copy "/tmp/$BACKUP_FILE" gdrive:
-
-                  # Cleanup
-                  rm -f "/tmp/$BACKUP_FILE"
-                  rm -f /tmp/sa.json
-
               env:
                 - name: DB_HOST
                   valueFrom:
@@ -73,13 +44,16 @@ spec:
                     secretKeyRef:
                       name: wordpress-secret
                       key: db_password
-                - name: GDRIVE_SA_JSON
-                  valueFrom:
-                    secretKeyRef:
-                      name: wordpress-secret
-                      key: gdrive_sa_json
-                - name: GDRIVE_FOLDER_ID
+                # rclone reads these env vars automatically — no config file needed
+                - name: RCLONE_CONFIG_GDRIVE_TYPE
+                  value: "drive"
+                - name: RCLONE_CONFIG_GDRIVE_ROOT_FOLDER_ID
                   valueFrom:
                     secretKeyRef:
                       name: wordpress-secret
                       key: gdrive_folder_id
+                - name: RCLONE_CONFIG_GDRIVE_SERVICE_ACCOUNT_CREDENTIALS
+                  valueFrom:
+                    secretKeyRef:
+                      name: wordpress-secret
+                      key: gdrive_sa_json
