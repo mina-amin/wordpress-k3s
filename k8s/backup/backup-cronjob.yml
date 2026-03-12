@@ -28,8 +28,8 @@ spec:
                 - name: DB_HOST
                   valueFrom:
                     configMapKeyRef:
-                      name: db-cm          
-                      key: db_host
+                      name: wp-config        
+                      key: WORDPRESS_DB_HOST
                 - name: DB_NAME
                   valueFrom:
                     configMapKeyRef:
