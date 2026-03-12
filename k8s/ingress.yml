@@ -10,7 +10,7 @@ spec:
   ingressClassName: traefik
   rules:
   - host: wordpress.handbyhand.me
-    https:
+    http:
       paths:
       - path: /
         pathType: Prefix
