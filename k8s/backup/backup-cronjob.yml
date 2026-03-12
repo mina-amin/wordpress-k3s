@@ -1,0 +1,85 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: db-backup
+  namespace: wordpress-app
+spec:
+  schedule: "0 2 * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: db-backup
+              image: mariadb:10.6.4-focal
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -e
+
+                  # Install rclone
+                  apt-get update -qq && apt-get install -y -qq curl unzip
+                  curl -fsSL https://rclone.org/install.sh | bash
+
+                  # Write service account JSON from secret
+                  echo "$GDRIVE_SA_JSON" > /tmp/sa.json
+
+                  # Configure rclone with service account
+                  mkdir -p /root/.config/rclone
+                  cat <<RCLONE_CONF > /root/.config/rclone/rclone.conf
+                  [gdrive]
+                  type = drive
+                  service_account_file = /tmp/sa.json
+                  root_folder_id = ${GDRIVE_FOLDER_ID}
+                  RCLONE_CONF
+
+                  # Dump the database
+                  BACKUP_FILE="backup-$(date +%Y%m%d-%H%M%S).sql.gz"
+                  mysqldump \
+                    -h "$DB_HOST" \
+                    -u "$DB_USER" \
+                    -p"$DB_PASSWORD" \
+                    "$DB_NAME" | gzip > "/tmp/$BACKUP_FILE"
+
+                  # Upload to Google Drive
+                  rclone copy "/tmp/$BACKUP_FILE" gdrive:
+
+                  # Cleanup
+                  rm -f "/tmp/$BACKUP_FILE"
+                  rm -f /tmp/sa.json
+
+              env:
+                - name: DB_HOST
+                  valueFrom:
+                    configMapKeyRef:
+                      name: wordpress-config
+                      key: db_host
+                - name: DB_NAME
+                  valueFrom:
+                    configMapKeyRef:
+                      name: wordpress-config
+                      key: db_name
+                - name: DB_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: wordpress-secret
+                      key: db_user
+                - name: DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: wordpress-secret
+                      key: db_password
+                - name: GDRIVE_SA_JSON
+                  valueFrom:
+                    secretKeyRef:
+                      name: wordpress-secret
+                      key: gdrive_sa_json
+                - name: GDRIVE_FOLDER_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: wordpress-secret
+                      key: gdrive_folder_id
