@@ -66,7 +66,10 @@ jobs:
 
       - name: Bootstrap k3s on server
         run: |
-          ssh -i ~/.ssh/id_rsa ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} '
+          ssh -i ~/.ssh/id_rsa \
+              -o StrictHostKeyChecking=no \
+              -o ServerAliveInterval=30 \
+              ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} '
             if ! command -v k3s &> /dev/null; then
               curl -sfL https://get.k3s.io | sh -
               sleep 20
@@ -75,18 +78,40 @@ jobs:
 
       - name: Copy manifests to server
         run: |
-          ssh -i ~/.ssh/id_rsa ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} 'mkdir -p ~/k8s/backup'
-          scp -i ~/.ssh/id_rsa k8s/*.yml ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }}:~/k8s/
-          scp -i ~/.ssh/id_rsa k8s/backup/*.yml ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }}:~/k8s/backup/
+          ssh -i ~/.ssh/id_rsa \
+              -o StrictHostKeyChecking=no \
+              -o ServerAliveInterval=30 \
+              ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} \
+              'mkdir -p ~/k8s/backup'
+
+          tar -czf - k8s/*.yml | \
+          ssh -i ~/.ssh/id_rsa \
+              -o StrictHostKeyChecking=no \
+              -o ServerAliveInterval=30 \
+              ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} \
+              'tar -xzf - --strip-components=1 -C ~/k8s/'
+
+          tar -czf - k8s/backup/*.yml | \
+          ssh -i ~/.ssh/id_rsa \
+              -o StrictHostKeyChecking=no \
+              -o ServerAliveInterval=30 \
+              ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} \
+              'tar -xzf - --strip-components=2 -C ~/k8s/backup/'
 
       - name: Substitute ingress host
         run: |
-          ssh -i ~/.ssh/id_rsa ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} \
-            "sed -i 's/k8s.local/${{ secrets.INGRESS_HOST }}/g' ~/k8s/ingress.yml"
+          ssh -i ~/.ssh/id_rsa \
+              -o StrictHostKeyChecking=no \
+              -o ServerAliveInterval=30 \
+              ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} \
+              "sed -i 's/k8s.local/${{ secrets.INGRESS_HOST }}/g' ~/k8s/ingress.yml"
 
       - name: Apply manifests
         run: |
-          ssh -i ~/.ssh/id_rsa ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} '
+          ssh -i ~/.ssh/id_rsa \
+              -o StrictHostKeyChecking=no \
+              -o ServerAliveInterval=30 \
+              ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} '
             sudo kubectl apply -f ~/k8s/namespace.yml
             sudo kubectl apply -f ~/k8s/secrets.yml
             sudo kubectl apply -f ~/k8s/configmap.yml
@@ -101,15 +126,24 @@ jobs:
 
       - name: Wait for db rollout
         run: |
-          ssh -i ~/.ssh/id_rsa ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} \
-            "sudo kubectl rollout status deployment/db -n ${{ env.NAMESPACE }} --timeout=120s"
+          ssh -i ~/.ssh/id_rsa \
+              -o StrictHostKeyChecking=no \
+              -o ServerAliveInterval=30 \
+              ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} \
+              "sudo kubectl rollout status deployment/db -n ${{ env.NAMESPACE }} --timeout=120s"
 
       - name: Wait for wp rollout
         run: |
-          ssh -i ~/.ssh/id_rsa ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} \
-            "sudo kubectl rollout status deployment/wordpress -n ${{ env.NAMESPACE }} --timeout=120s"
+          ssh -i ~/.ssh/id_rsa \
+              -o StrictHostKeyChecking=no \
+              -o ServerAliveInterval=30 \
+              ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} \
+              "sudo kubectl rollout status deployment/wordpress -n ${{ env.NAMESPACE }} --timeout=120s"
 
       - name: Verify deployment
         run: |
-          ssh -i ~/.ssh/id_rsa ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} \
-            "sudo kubectl get pods,svc,ingress -n ${{ env.NAMESPACE }} -o wide"
+          ssh -i ~/.ssh/id_rsa \
+              -o StrictHostKeyChecking=no \
+              -o ServerAliveInterval=30 \
+              ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} \
+              "sudo kubectl get pods,svc,ingress -n ${{ env.NAMESPACE }} -o wide"
