@@ -3,10 +3,13 @@ kind: Ingress
 metadata:
   name: wordpress-ingress
   namespace: wordpress-app
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
 spec:
   ingressClassName: traefik
   rules:
-  - host: k8s.local
+  - host: wordpress.handbyhand.me
     http:
       paths:
       - path: /
@@ -15,4 +18,4 @@ spec:
           service:
             name: cluster-ip-service-wp
             port:
-              number: 8080
+              number: 80
