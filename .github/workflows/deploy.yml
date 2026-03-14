@@ -106,14 +106,14 @@ jobs:
               ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} \
               "sed -i 's/k8s.local/${{ secrets.INGRESS_HOST }}/g' ~/k8s/ingress.yml"
 
-      - name: Apply AWS secret to cluster   #########################################
+      - name: Validate k8s manifests #####################
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} \
-            "kubectl create secret generic aws-backup-secret \
-              --from-literal=AWS_ACCESS_KEY_ID='${{ secrets.AWS_ACCESS_KEY_ID }}' \
-              --from-literal=AWS_SECRET_ACCESS_KEY='${{ secrets.AWS_SECRET_ACCESS_KEY }}' \
-              -n wordpress-app \
-              --dry-run=client -o yaml | kubectl apply -f -"
+          kubectl apply -f k8s/namespace.yml
+          for file in k8s/*.yml; do
+            [ "$file" = "k8s/namespace.yml" ] && continue
+            [ "$file" = "k8s/secrets.yml" ] && continue    # ← add this line
+            kubectl apply --dry-run=server -f "$file" || exit 1
+          done
 
       - name: Apply manifests
         run: |
