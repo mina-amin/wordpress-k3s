@@ -106,6 +106,15 @@ jobs:
               ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} \
               "sed -i 's/k8s.local/${{ secrets.INGRESS_HOST }}/g' ~/k8s/ingress.yml"
 
+      - name: Apply AWS secret to cluster   #########################################
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} \
+            "kubectl create secret generic aws-backup-secret \
+              --from-literal=AWS_ACCESS_KEY_ID='${{ secrets.AWS_ACCESS_KEY_ID }}' \
+              --from-literal=AWS_SECRET_ACCESS_KEY='${{ secrets.AWS_SECRET_ACCESS_KEY }}' \
+              -n wordpress-app \
+              --dry-run=client -o yaml | kubectl apply -f -"
+
       - name: Apply manifests
         run: |
           ssh -i ~/.ssh/id_rsa \

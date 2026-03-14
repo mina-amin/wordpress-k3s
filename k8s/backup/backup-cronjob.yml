@@ -28,6 +28,7 @@ spec:
                     secretKeyRef:
                       name: db-pass          
                       key: MYSQL_PASSWORD
+              
               command:
                 - /bin/bash
                 - -c
