@@ -17,3 +17,13 @@ data:
   WORDPRESS_DB_HOST: cluster-ip-service-db
   WORDPRESS_DB_USER: wp_user
   WORDPRESS_DB_NAME: wordpress
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aws-cm
+  namespace: wordpress-app
+data:
+  AWS_REGION: us-east-1
+  AWS_S3_BUCKET: s3-wp-route-655551439338-us-east-1-an

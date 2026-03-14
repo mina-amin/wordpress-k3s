@@ -1,0 +1,127 @@
+---
+# ── Backup script ConfigMap ───────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-backup-script
+  namespace: wordpress-app
+data:
+  backup.sh: |
+    #!/bin/sh
+    set -e
+
+    TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+    FILENAME="${MYSQL_DATABASE}_${TIMESTAMP}.sql.gz"
+    TMPFILE="/tmp/${FILENAME}"
+    RCLONE_CONF="/tmp/rclone.conf"
+
+    echo "[$(date)] Starting backup of '${MYSQL_DATABASE}' from ${WORDPRESS_DB_HOST}..."
+
+    # ── Build rclone.conf dynamically from mounted Secret ──────────────────────
+    cat > "${RCLONE_CONF}" <<EOF
+    [gdrive]
+    type = drive
+    service_account_file = /etc/gdrive/sa.json
+    root_folder_id = ${GDRIVE_FOLDER_ID}
+    EOF
+
+    # ── Dump & compress ────────────────────────────────────────────────────────
+    mysqldump \
+      -h "${WORDPRESS_DB_HOST}" \
+      -P 3306 \
+      -u "${MYSQL_USER}" \
+      -p"${MYSQL_PASSWORD}" \
+      --single-transaction \
+      --routines \
+      --triggers \
+      "${MYSQL_DATABASE}" | gzip > "${TMPFILE}"
+
+    echo "[$(date)] Dump done → ${TMPFILE}. Uploading..."
+
+    # ── Upload via rclone ──────────────────────────────────────────────────────
+    rclone copy "${TMPFILE}" "gdrive:/" \
+      --config "${RCLONE_CONF}" \
+      --log-level INFO
+
+    echo "[$(date)] Upload complete → ${FILENAME}"
+    rm -f "${TMPFILE}" "${RCLONE_CONF}"
+
+---
+# ── CronJob ───────────────────────────────────────────────────────────────────
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mariadb-gdrive-backup
+  namespace: wordpress-app
+spec:
+  schedule: "*/2 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: alpine:3.19
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  apk add --no-cache mysql-client rclone > /dev/null 2>&1
+                  sh /scripts/backup.sh
+              env:
+                # ── From ConfigMap: db-cm ──────────────────────────────────────
+                - name: MYSQL_USER
+                  valueFrom:
+                    configMapKeyRef:
+                      name: db-cm
+                      key: MYSQL_USER
+                - name: MYSQL_DATABASE
+                  valueFrom:
+                    configMapKeyRef:
+                      name: db-cm
+                      key: MYSQL_DATABASE
+
+                # ── From ConfigMap: wp-config ──────────────────────────────────
+                - name: WORDPRESS_DB_HOST
+                  valueFrom:
+                    configMapKeyRef:
+                      name: wp-config
+                      key: WORDPRESS_DB_HOST
+
+                # ── From Secret: db-pass ───────────────────────────────────────
+                - name: MYSQL_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: db-pass
+                      key: MYSQL_PASSWORD
+
+                # ── From Secret: gdrive-secret ─────────────────────────────────
+                - name: GDRIVE_FOLDER_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: gdrive-secret
+                      key: gdrive_folder_id
+
+              volumeMounts:
+                - name: script
+                  mountPath: /scripts
+                # SA JSON mounted as a file at /etc/gdrive/sa.json
+                - name: gdrive-sa
+                  mountPath: /etc/gdrive
+                  readOnly: true
+
+          volumes:
+            - name: script
+              configMap:
+                name: db-backup-script
+                defaultMode: 0755
+            - name: gdrive-sa
+              secret:
+                secretName: gdrive-secret
+                items:
+                  - key: gdrive_sa_json
+                    path: sa.json    # → /etc/gdrive/sa.json

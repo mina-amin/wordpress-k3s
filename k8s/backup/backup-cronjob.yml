@@ -1,153 +1,58 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: db-backup
+  name: mysql-backup
   namespace: wordpress-app
+  labels:
+    app: mysql-backup
 spec:
-  schedule: "*/2 * * * *"
-  concurrencyPolicy: Forbid
+  schedule: "0 2 * * *"
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
   jobTemplate:
     spec:
-      activeDeadlineSeconds: 120
       template:
         spec:
-          restartPolicy: Never
+          restartPolicy: OnFailure
           containers:
-            - name: db-backup
-              image: ubuntu:22.04
+            - name: mysql-backup
+              image: mariadb:10.6.4-focal
+              envFrom:
+                - configMapRef:
+                    name: db-cm    # MYSQL_HOST, MYSQL_DATABASE, MYSQL_USER
+                - secretRef:
+                    name: aws-backup-secret  # AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_S3_BUCKET, AWS_REGION
+              env:
+                - name: MYSQL_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: db-pass          
+                      key: MYSQL_PASSWORD
               command:
                 - /bin/bash
                 - -c
                 - |
                   set -e
-                  apt-get update -qq
-                  apt-get install -y -qq mariadb-client curl ca-certificates openssl python3
 
-                  # dump database
-                  BACKUP_FILE="/backup/backup-$(date +%Y%m%d-%H%M%S).sql.gz"
-                  echo "Dumping '$DB_NAME'..."
-                  mysqldump -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" | gzip > "$BACKUP_FILE"
-                  echo "Saved: $BACKUP_FILE"
+                  echo "📦 Installing AWS CLI..."
+                  apt-get update -qq && apt-get install -y -qq awscli
 
-                  # write service account JSON to temp file
-                  echo "$GDRIVE_SA_JSON" > /tmp/sa.json
+                  TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+                  BACKUP_FILE="/tmp/backup_${TIMESTAMP}.sql.gz"
+                  S3_KEY="backups/mysql/backup_${TIMESTAMP}.sql.gz"
 
-                  # generate JWT and get access token
-                  TOKEN=$(python3 << 'PYEOF'
-                  import json, time, base64, urllib.request, urllib.parse, tempfile, os, subprocess
+                  echo "🗄️ Dumping database: ${MYSQL_DATABASE}..."
+                  mysqldump \
+                    -h "${MYSQL_HOST}" \
+                    -u "${MYSQL_USER}" \
+                    -p"${MYSQL_PASSWORD}" \
+                    "${MYSQL_DATABASE}" | gzip > "${BACKUP_FILE}"
 
-                  sa = json.load(open('/tmp/sa.json'))
-                  now = int(time.time())
+                  echo "☁️ Uploading to s3://${AWS_S3_BUCKET}/${S3_KEY}..."
+                  aws s3 cp "${BACKUP_FILE}" "s3://${AWS_S3_BUCKET}/${S3_KEY}" \
+                    --region "${AWS_REGION}"
 
-                  header = base64.urlsafe_b64encode(
-                      json.dumps({"alg":"RS256","typ":"JWT"}).encode()
-                  ).rstrip(b'=').decode()
+                  echo "🧹 Cleaning up..."
+                  rm -f "${BACKUP_FILE}"
 
-                  payload = base64.urlsafe_b64encode(
-                      json.dumps({
-                          "iss": sa["client_email"],
-                          "scope": "https://www.googleapis.com/auth/drive",
-                          "aud": "https://oauth2.googleapis.com/token",
-                          "exp": now + 3600,
-                          "iat": now
-                      }).encode()
-                  ).rstrip(b'=').decode()
-
-                  msg = f"{header}.{payload}".encode()
-
-                  with tempfile.NamedTemporaryFile(delete=False, suffix='.pem') as kf:
-                      kf.write(sa["private_key"].encode())
-                      kf_name = kf.name
-
-                  sig = subprocess.run(
-                      ["openssl", "dgst", "-sha256", "-sign", kf_name],
-                      input=msg, capture_output=True
-                  ).stdout
-                  os.unlink(kf_name)
-
-                  jwt = f"{header}.{payload}.{base64.urlsafe_b64encode(sig).rstrip(b'=').decode()}"
-
-                  data = urllib.parse.urlencode({
-                      "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
-                      "assertion": jwt
-                  }).encode()
-
-                  resp = json.loads(urllib.request.urlopen(
-                      urllib.request.Request("https://oauth2.googleapis.com/token", data=data)
-                  ).read())
-
-                  print(resp["access_token"])
-                  PYEOF
-                  )
-
-                  # upload to google drive
-                  echo "Uploading $(basename $BACKUP_FILE) to Google Drive..."
-                  HTTP_CODE=$(curl -s -o /tmp/upload_response.json -w "%{http_code}" \
-                    -X POST \
-                    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true" \
-                    -H "Authorization: Bearer $TOKEN" \
-                    -F "metadata={\"name\":\"$(basename $BACKUP_FILE)\",\"parents\":[\"$GDRIVE_FOLDER_ID\"]};type=application/json" \
-                    -F "file=@$BACKUP_FILE;type=application/gzip")
-
-                  cat /tmp/upload_response.json
-                  if [ "$HTTP_CODE" = "200" ]; then
-                    echo "Upload successful."
-                  else
-                    echo "Upload failed with HTTP $HTTP_CODE"
-                    exit 1
-                  fi
-
-                  # cleanup
-                  echo "Cleaning up files older than 20 minutes..."
-                  find /backup -name "backup-*.sql.gz" -mmin +20 -delete
-                  rm -f /tmp/sa.json /tmp/upload_response.json
-                  echo "All done."
-
-              env:
-                - name: DB_HOST
-                  valueFrom:
-                    configMapKeyRef:
-                      name: wp-config
-                      key: WORDPRESS_DB_HOST
-
-                - name: DB_NAME
-                  valueFrom:
-                    configMapKeyRef:
-                      name: db-cm
-                      key: MYSQL_DATABASE
-
-                - name: DB_USER
-                  valueFrom:
-                    configMapKeyRef:
-                      name: db-cm
-                      key: MYSQL_USER
-
-                - name: DB_PASSWORD
-                  valueFrom:
-                    secretKeyRef:
-                      name: db-pass
-                      key: MYSQL_PASSWORD
-
-                - name: GDRIVE_FOLDER_ID
-                  valueFrom:
-                    secretKeyRef:
-                      name: gdrive-secret
-                      key: gdrive_folder_id
-
-                - name: GDRIVE_SA_JSON
-                  valueFrom:
-                    secretKeyRef:
-                      name: gdrive-secret
-                      key: gdrive_sa_json
-
-              volumeMounts:
-                - name: backup-dir
-                  mountPath: /backup
-
-          volumes:
-            - name: backup-dir
-              hostPath:
-                path: /tmp/db-backups
-                type: DirectoryOrCreate
+                  echo "✅ Backup complete: ${S3_KEY}"
